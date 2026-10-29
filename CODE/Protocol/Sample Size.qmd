@@ -1,0 +1,145 @@
+---
+title: "Cálculo del tamaño de muestra"
+subtitle: "Ensayo aleatorizado por conglomerados: DIALOG+"
+author: "David Niño-Torres"
+lang: es
+
+format:
+  html:
+    toc: true
+    toc-location: left
+    toc-title: "Contenido"
+    toc-depth: 3
+    number-sections: true
+    theme: flatly
+    highlight-style: tango
+    code-fold: false
+    embed-resources: true
+    fig-align: center
+
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## Parámetros del estudio
+
+| Parámetro | Símbolo | Valor |
+|---|:---:|:---:|
+| Nivel de significancia | $\alpha$ | 0.05 |
+| Potencia estadística | $1-\beta$ | 0.90 |
+| MCID (escenario conservador) | $\delta$ | 0.31 puntos |
+| Desviación estándar MANSA | $\sigma$ | 0.9 |
+| Correlación línea base – seguimiento | $r$ | 0.4 |
+| Tamaño promedio del clúster | $m$ | 10 personas |
+| Correlación intraclase | ICC | 0.01 |
+| Varianza relativa del tamaño del clúster | $CV^2$ | 0.1 |
+| Pérdida al seguimiento esperada | — | 20% |
+
+## Derivación matemática
+
+#### Paso 1 — Ajuste ANCOVA
+
+$$\sigma_{\text{adj}} = 0.9 \times \sqrt{1 - 0.4^2} \approx 0.8249 \qquad d_{\text{adj}} = \frac{0.31}{0.8249} \approx 0.3758$$
+
+#### Paso 2 — Muestra base (sin diseño por clústeres)
+
+Se calcula el $n$ equivalente para un diseño individual:
+
+$$n_{\text{indiv}} = \frac{(1.96 + 1.2816)^2 \times 2}{(0.3758)^2} \approx \frac{21.016}{0.1412} \approx 148.8 \Rightarrow N_{\text{indiv}} = 298$$
+
+#### Paso 3 — Efecto del diseño (*Design Effect*, DEFF)
+
+El diseño por clústeres introduce correlación dentro de los grupos (ICC) y variabilidad en el tamaño de los clústeres ($CV^2$):
+
+$$\text{DEFF} = \left[1 + (m - 1) \cdot \text{ICC}\right] \times (1 + CV^2)$$
+
+**Sustituyendo:**
+
+$$\text{DEFF} = \left[1 + (10 - 1) \times 0.01\right] \times (1 + 0.1) = 1.09 \times 1.1 = 1.199$$
+
+::: {.callout-tip}
+## Interpretación del DEFF
+
+- **$[1 + (m-1)\cdot\text{ICC}]$** — fórmula clásica de Kish; captura la pérdida de información por agrupar individuos similares.
+- **$(1 + CV^2)$** — corrige la variabilidad real en el tamaño de los clústeres; si todos fueran iguales, $CV^2 = 0$ y este factor desaparece.
+:::
+
+#### Paso 4 — Muestra total ajustada por diseño
+
+$$N_{\text{clúster}} = \lceil N_{\text{indiv}} \times \text{DEFF} \rceil = \lceil 298 \times 1.199 \rceil = 358$$
+
+#### Paso 5 — Número de clústeres necesarios
+
+$$K = \left\lceil \frac{N_{\text{clúster}}}{m} \right\rceil = \left\lceil \frac{358}{10} \right\rceil = 36 \text{ clústeres} \quad \Rightarrow \quad 18 \text{ por brazo}$$
+
+#### Paso 6 — Ajuste por pérdida al seguimiento
+
+Para que **después** de la pérdida queden $m = 10$ participantes por clúster:
+
+$$m_{\text{reclutar}} = \frac{10}{1 - 0.20} = 12.5 \text{ personas por clúster}$$
+
+$$N_{\text{total reclutado}} = \lceil 36 \times 12.5 \rceil = 450$$
+
+## Código R
+
+```{r}
+#| label: ensayo-clusters
+
+# install.packages("pwr")   # ejecutar una sola vez si no está instalado
+library(pwr)
+
+# -----------------------------------------
+# 2. Ensayo aleatorizado por clústeres - Guatemala y Bolivia
+# -----------------------------------------
+
+sd    <- 0.9    # Desviación estándar de la escala MANSA
+cor   <- 0.4    # Correlación línea base – seguimiento
+m     <- 10     # Tamaño promedio del clúster
+icc   <- 0.01   # Correlación intraclase (ICC)
+cv2   <- 0.1    # Varianza relativa del tamaño del clúster (CV²)
+delta <- 0.31   # MCID conservador para este escenario
+alpha <- 0.05
+power <- 0.90
+
+# Paso 1: Desviación estándar ajustada por ANCOVA
+sd_adj <- sd * sqrt(1 - cor^2)
+cat("σ ajustada (ANCOVA):", round(sd_adj, 4), "\n")
+
+# Paso 2: Tamaño del efecto ajustado
+d_adj <- delta / sd_adj
+cat("Cohen's d ajustado:", round(d_adj, 4), "\n")
+
+# Paso 3: Muestra base (como si el diseño fuera individual)
+result_indiv <- pwr.t.test(d = d_adj, power = power, sig.level = alpha,
+                           type = "two.sample", alternative = "two.sided")
+n_indiv_raw <- result_indiv$n * 2
+cat("N base (diseño individual):", ceiling(n_indiv_raw), "\n")
+
+# Paso 4: Efecto del diseño
+# DEFF = [1 + (m-1)*ICC] * (1 + CV²)
+design_effect <- (1 + (m - 1) * icc) * (1 + cv2)
+cat("Efecto del diseño (DEFF):", round(design_effect, 4), "\n")
+
+# Paso 5: Muestra total ajustada por diseño
+n_clustered <- ceiling(n_indiv_raw * design_effect)
+cat("N total ajustado por diseño:", n_clustered, "\n")
+
+# Paso 6: Número de clústeres necesarios
+clusters_needed <- ceiling(n_clustered / m)
+cat("Clústeres necesarios:", clusters_needed,
+    "(", clusters_needed / 2, "por brazo)\n")
+
+# Paso 7: Ajuste por pérdida del 20%
+m_recruit      <- m / (1 - 0.20)
+total_recruited <- ceiling(clusters_needed * m_recruit)
+
+cat("\n--- RESULTADOS FINALES: ENSAYO POR CLÚSTERES ---\n")
+cat("Número de clústeres requeridos:", clusters_needed,
+    "(", clusters_needed / 2, "por brazo)\n")
+cat("Participantes a reclutar por clúster:", round(m_recruit, 1), "\n")
+cat("Total participantes a reclutar (con 20% pérdida):", total_recruited, "\n")
+```
+
+---
